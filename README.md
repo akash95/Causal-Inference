@@ -1,1 +1,2 @@
-Analysing impact of introducing online community feature in a game
+Marketing Campaign Analysis
+Understanding the impact of customer acquisition through marketing campaigns and its influence on customer retention and churn
