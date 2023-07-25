@@ -1,10 +1,3 @@
----
-title: "HW3_Part _AK"
-output: html_document
-date: "2022-11-10"
----
-
-
 ```{r}
 rm(list=ls())
 library(readxl)
@@ -22,7 +15,7 @@ library (ROCR)
 ```
 
 ```{r}
-mydata<-read_excel("Assignment3HW3_Data.xlsx", sheet = 4)
+mydata<-read_excel("Data.xlsx", sheet = 4)
 
 colnames(mydata)[5] <- 'Age'
 colnames(mydata)[6] <- 'Joined'
