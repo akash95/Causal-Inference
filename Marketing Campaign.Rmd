@@ -1,0 +1,217 @@
+---
+title: "HW3_Part _AK"
+output: html_document
+date: "2022-11-10"
+---
+
+
+```{r}
+rm(list=ls())
+library(readxl)
+library(ggplot2)
+library(Hmisc)
+library(MASS)
+library(caret)
+library(regclass)
+library(ISLR)
+library(boot)
+library(vcd)
+library(pROC)
+library (ROCR)
+
+```
+
+```{r}
+mydata<-read_excel("Assignment3HW3_Data.xlsx", sheet = 4)
+
+colnames(mydata)[5] <- 'Age'
+colnames(mydata)[6] <- 'Joined'
+colnames(mydata)[7] <- 'Churned'
+colnames(mydata)[8] <- 'Spend'
+colnames(mydata)[1] <- 'Camp_Org'
+# str(mydata)
+
+mylogit1<-glm(Churned~Age+Joined+Spend+Camp_Org ,data=mydata,family=binomial(link="logit"))
+
+summary(mylogit1)
+
+
+
+#Customers who joined via campaign or organically don't signficantly influence Churn
+
+```
+```{r}
+mylogit2= glm(Churned~Age+Joined+Camp_Org ,data=mydata,family=binomial(link="logit"))
+
+summary(mylogit2)
+```
+
+```{r}
+mylogit3= glm(Churned~Joined+Camp_Org ,data=mydata,family=binomial(link="logit"))
+
+summary(mylogit3)
+```
+
+```{r}
+mylogit4= glm(Churned~Camp_Org ,data=mydata,family=binomial(link="logit"))
+
+summary(mylogit4)
+
+# Based on all models considered, there is no significant relationship between Campaign/Organic customers and log(Odds of churn)
+
+```
+
+```{r}
+
+anova(mylogit1, test="Chisq")
+
+#As can be seen from the output, Campaign organic doesn't significantly affect the churn rate
+
+oddsr=round(exp(cbind(OddsRatio=coef(mylogit1),confint(mylogit1))),4)
+
+oddsr
+
+#As the p-value for Camp_org is not significant, even though odds ratio for Camp_org is positive, we can't conclude anything.
+
+```
+
+
+```{r}
+fin_model = mylogit1
+
+preddata = data.frame(mydata)
+probdefault2<-predict(fin_model,newdata=preddata,type="response")
+preddefault2<-ifelse(probdefault2 > 0.5, 1,0) #at what level should we say prob(default)=1
+preddata["Predicted_churn_rate"] = probdefault2
+preddata["Predicted_Churn"] = preddefault2
+preddata["Retention rate"] = 1-probdefault2
+
+confMat2 = confusionMatrix(data = as.factor(preddefault2),reference = as.factor(mydata$Churned),positive = "1") #try from 0.2 #to 0.7
+confMat2 ###Note, because of how this matrix is strutured, 0,0 becomes true positive -- thus we specify positive as 1
+
+
+```
+
+```{r}
+roc(mydata$Churned,fin_model$fitted.values, plot=TRUE)
+par(pty="s")
+roc(mydata$Churned,fin_model$fitted.values, plot=TRUE, legacy.axes=TRUE, percent=TRUE, xlab="FP Rate", ylab="TP Rate",print.auc=TRUE)
+
+#AUC of the model is only 62.7%
+
+```
+
+```{r}
+churned_camp = data.frame(subset(preddata,preddata$Churned == 1 &  preddata$Camp_Org == 1 ))
+ret_camp = data.frame(subset(preddata,preddata$Churned == 0 &  preddata$Camp_Org == 1 ))
+total_camp = data.frame(subset(preddata,  preddata$Camp_Org == 1 ))
+
+churned_org = data.frame(subset(preddata,preddata$Churned == 1 &  preddata$Camp_Org == 0 ))
+ret_org = data.frame(subset(preddata,preddata$Churned ==0 &  preddata$Camp_Org == 0 ))
+total_org = data.frame(subset(preddata,  preddata$Camp_Org == 0 ))
+
+prop.test(x = c(nrow(ret_camp),nrow(ret_org)), n = c(nrow(total_camp), nrow(total_org)))
+
+# There is no significant differnt between retention rates of customers who joined via campaign or those who joined organically
+
+churn_rate_camp =  nrow(churned_camp)/ nrow(total_camp)
+r_camp = 1 - churn_rate_camp ## retention rate of those who joined via campaign
+L_camp = (1+0.1)/ (1+0.1-r_camp) ## avg expected customer life time who joined via campaign. Assume a discount factor of 0.1
+
+churn_rate_org =  nrow(churned_org)/ nrow(total_org)
+r_org = 1 - churn_rate_org ## retention rate of those who joined organically
+L_org = (1+0.1)/ (1+0.1 - r_org) ## avg expected customer life time who joined organically. Assume a discount factor of 0.1
+
+
+CLV_camp = (total_camp$Spend*3*0.5)*L_camp
+CLV_org = (total_org$Spend*3*0.5)*L_org
+
+t.test(CLV_camp, CLV_org, var.equal = TRUE)
+
+#As can be seen from the t-test, there is no signficant difference between CLV values of campaign and organic customers
+
+#m_camp = mean(total_camp$Spend*3*0.50)
+# CLV_camp <- m_camp*L_camp ## CLV of customers who joined via campaign
+
+#m_org = mean(total_org$Spend*3*0.50)
+# CLV_org <- m_org*L_org ## CLV of customers who joined organically
+
+sprintf("r_camp: %f",r_camp)
+sprintf("r_org: %f",r_org)
+# sprintf("CLV_camp: %f",CLV_camp)
+# sprintf("CLV_org: %f",CLV_org)
+```
+
+```{r}
+###### CLV for every customer 
+churned = data.frame(subset(preddata, preddata$Churned == 1 ))
+churn_rate = nrow(churned)/ nrow(preddata)
+
+R_overall = 1 - churn_rate
+L_overall = (1+0.1)/(1+0.1-R_overall) ## avg expected customer life time #Assume a discount factor of 0.1
+# m_overall = mean(preddata$Spend*3)*0.50
+# CLV_overall <- m_overall*L_overall ## CLV of customers
+# CLV_overall
+#sprintf("CLV overall: %f", CLV_overall)
+preddata$CLV <- ((preddata$Spend*3*0.50) * L_overall)
+CLV_Camp_org <- lm(preddata$CLV ~ preddata$Camp_Org+preddata$Joined+preddata$Age)
+summary (CLV_Camp_org)
+
+#Based on the model results, customer joining via campaign or those joining organically has no significantly affect on the CLV
+
+
+```
+
+
+# ```{r}
+# # churned_camp = data.frame(subset(preddata,preddata$Predicted_churn == 1 &  preddata$Camp_Org == 1 ))
+# ret_camp = data.frame(subset(preddata,preddata$Camp_Org == 1 ))
+# total_camp = data.frame(subset(preddata,  preddata$Camp_Org == 1 ))
+# # 
+# # churn_rate_camp =  nrow(churned_camp)/ nrow(total_camp)
+# 
+# r_camp = mean(ret_camp$Retention.rate)
+# 
+# #r_camp = 1 - churn_rate_camp ## retention rate of those who joined via campaign
+# L_camp = 1/ (1-r_camp) ## avg expected customer life time who joined via campaign
+# m_camp = mean(total_camp$Spend*3*0.50)
+# CLV_camp <- m_camp*L_camp ## CLV of customers who joined via campaign
+# CLV_camp
+# 
+# #churned_org = data.frame(subset(preddata,preddata$Predicted_churn == 1 &  preddata$Camp_Org == 0 ))
+# total_org = data.frame(subset(preddata,  preddata$Camp_Org == 0 ))
+# 
+# #churn_rate_org =  nrow(churned_org)/ nrow(total_org)
+#  ## retention rate of those who joined organically
+# ret_org = data.frame(subset(preddata,preddata$Camp_Org == 0 ))
+# r_org = mean(ret_org$Retention.rate)
+# 
+# 
+# L_org = 1/ (1 - r_org) ## avg expected customer life time who joined organically
+# m_org = mean(total_org$Spend*3*0.50)
+# CLV_org <- m_org*L_org ## CLV of customers who joined organically
+# CLV_org
+# 
+# #CLV and retention rate of customers who joined organically is higher than those customers who joined via campaign
+# 
+# sprintf("r_camp: %f",r_camp)
+# sprintf("r_org: %f",r_org)
+# sprintf("CLV_camp: %f",CLV_camp)
+# sprintf("CLV_org: %f",CLV_org)
+# 
+# 
+# ###### CLV for every customer (irrespective of campaign or not)
+# 
+# R_overall = mean(preddata$`Retention rate`)
+# L_overall = 1/(1-R_overall)
+# m_overall = mean(preddata$Spend*3)*0.50
+# CLV_overall <- m_overall*L_overall ## CLV of customers
+# CLV_overall
+# 
+# sprintf("CLV overall: %f", CLV_overall)
+# preddata$CLV <- ((preddata$Spend*3*0.50) * L_overall)
+# CLV_Camp_org <- lm(preddata$CLV ~ preddata$Camp_Org+preddata$Joined+preddata$Age)
+# summary (CLV_Camp_org)
+# 
+# #Customers who joined via campaign or organically don't significantly influence CLV
+```
