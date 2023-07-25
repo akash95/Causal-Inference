@@ -1,0 +1,163 @@
+title: **"LogisticReg_Default"**
+output: html_notebook
+
+
+Load Libraries
+
+```{r}
+rm(list=ls())
+library(readxl)
+library(ggplot2)
+library(Hmisc)
+library(MASS)
+## library(caret)
+library(regclass)
+library(ISLR)
+library(boot)
+library(vcd)
+library(pROC)
+library (ROCR)
+```
+
+
+After loading the libraries, load the excel file containing data on Defaults
+
+```{r}
+
+##set your working directory
+
+#setwd("/path/to/my/directory")
+library("readxl")
+##setwd("")
+mydata = read_excel("Data2.xlsx")
+
+summary(mydata) #summary of the data
+```
+You could also use
+
+```{r}
+str(mydata)
+```
+
+
+What do you notice? Looks like the Variables default and student are *character* and not *numeric*. Let's look at the values they take.
+
+```{r}
+head(mydata)
+```
+
+head alone might not display _all possible values_. Let's find all the possible values
+
+```{r}
+levels(as.factor(mydata$`Joined?`))
+levels(as.factor(mydata$`Churned at 3 months after launch of the online community`))
+
+```
+
+
+Looks like both have only two levels and are Yes/No variables. Let's convert all No to 0 and Yes to 1. To do so, we create two new variables in the same mydata table. The two variables are labelled default2 and student2.
+
+
+```{r}
+mydata$churn<- ifelse(mydata$`Churned at 3 months after launch of the online community` == "No",0,1)
+mydata$join <- ifelse(mydata$`Joined?` == "No",0,1)
+```
+
+Confirm the change by looking at the data again. And get the summary.
+
+```{r}
+head(mydata)
+
+levels(as.factor(mydata$churn))
+levels(as.factor(mydata$join)) #if you wanted to recheck the levels
+```
+```{r}
+summary(mydata)
+```
+
+Looks like it worked!
+
+Now let's code the model. We want to predict default. The independent variables in our dataset are 'student=Yes/No', 'balance' and 'income'. The default variable is discrete and has only two levels: {0,1}. Unlike in a regression, where the dependent variable is continuous, default being discrete does not lend itself to standard regression analysis.
+
+```{r}
+#Logistic Regression Model Estimation
+mylogit<-glm(`Churned at 3 months after launch of the online community`~ `Average Spend Last 3 months of Life with the firm`+ `Joined?`+ `Customer Age with Firm at time of launching the online community` ,data=mydata,family=binomial(link="logit"))
+```
+
+
+Let's output the results
+
+```{r}
+#coefficients
+summary(mylogit)
+```
+
+While the p-values indicate confidence, we could also output the 2.5% and 97.5% confindence intervals
+```{r}
+#Confidence Intervals
+Confidence=confint(mylogit) 
+Confidence
+```
+
+Another way to interpret the parameter estimates would be to compute the Odds Ratios
+
+```{r}
+#Odds Ratio Calculation, including confidence intervals
+oddsr=round(exp(cbind(OddsRatio=coef(mylogit),confint(mylogit))),4)
+
+oddsr
+
+##CLV Calculation 
+## we calculate L -> the xepected lifetime of a consumer 
+churn_yes_joined <- data.frame(subset(mydata, mydata$`Churned at 3 months after launch of the online community`== 1 &  mydata$`Joined?`== 1 ))
+
+
+churn_total_joined <- data.frame(subset(mydata,  mydata$`Joined?`== 1 ))
+
+
+
+nr <-nrow(churn_yes_joined)
+dr <- nrow(churn_total_joined)
+churn_of_those_who_joined <- nr/ dr
+
+churn_of_those_who_joined
+
+r <- 1- churn_of_those_who_joined ## retention rate of those who joined
+r
+L <- 1/ (1-r) ## avg expected customer life time 
+m <- mean(churn_total_joined$Average.Spend.Last.3.months.of.Life.with.the.firm*3)*0.50
+CLV <- m*L ## CLV of customers who joined 
+CLV 
+
+churn_yes_not_joined <- data.frame(subset(mydata, mydata$`Churned at 3 months after launch of the online community`== 1 &  mydata$`Joined?`== 0 ))
+
+
+churn_total_not_joined <- data.frame(subset(mydata,  mydata$`Joined?`== 0 ))
+
+nr_nj <-nrow(churn_yes_not_joined)
+dr_nj <- nrow(churn_total_not_joined)
+churn_of_those_who_didnt_join <- nr_nj/ dr_nj
+
+churn_of_those_who_didnt_join
+r_nj <- 1- churn_of_those_who_didnt_join ## retention rate of those who joined
+L_nj <- 1/ (1-r_nj) ## avg expected customer life time 
+m_nj <- mean(churn_total_not_joined$Average.Spend.Last.3.months.of.Life.with.the.firm*3) *0.50
+CLV_nj <- m_nj*L_nj ## CLV of customers who joined 
+
+CLV_nj
+
+r_nj
+
+###### CLV forevery customer 
+churn_yes <- data.frame(subset(mydata, mydata$`Churned at 3 months after launch of the online community`== 1 ))
+churn <- nrow(churn_yes)/ nrow(mydata)
+
+R <- 1 - churn
+L <- 1/(1-R)
+
+
+mydata$CLV <- ((mydata$`Average Spend Last 3 months of Life with the firm`*0.50) * L)
+
+CLV_Joined <- lm(mydata$CLV ~ mydata$`Joined?`)
+summary (CLV_Joined)
+```
