@@ -1,7 +1,3 @@
-title: **"LogisticReg_Default"**
-output: html_notebook
-
-
 Load Libraries
 
 ```{r}
